@@ -56,7 +56,7 @@ Open: `http://localhost:3000`
 ### Backend on Render (Docker)
 Use `server/Dockerfile` and set env variables:
 - `PORT=10000`
-- `WEB_ORIGIN=https://<your-vercel-domain>`
+- `WEB_ORIGIN=https://<your-vercel-domain>,https://<your-preview-domain>.vercel.app`
 - `WEATHER_API_KEY=<openweather-key>`
 
 ### Frontend on Vercel

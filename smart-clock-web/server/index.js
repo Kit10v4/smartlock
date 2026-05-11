@@ -20,11 +20,35 @@ dotenv.config();
 const port = Number(process.env.PORT || 10000);
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: process.env.WEB_ORIGIN || "*",
-    credentials: true
+
+const allowedOrigins = (process.env.WEB_ORIGIN || "*")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+function isOriginAllowed(origin) {
+  if (allowedOrigins.includes("*")) {
+    return true;
   }
+  if (!origin) {
+    return true;
+  }
+  return allowedOrigins.includes(origin);
+}
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`Not allowed by CORS: ${origin}`));
+  },
+  credentials: true
+};
+
+const io = new Server(server, {
+  cors: corsOptions
 });
 
 const uploadsDir = path.join(__dirname, "uploads");
@@ -51,10 +75,7 @@ function sendToDevice(payload, binary = false) {
 }
 
 app.use(
-  cors({
-    origin: process.env.WEB_ORIGIN || "*",
-    credentials: true
-  })
+  cors(corsOptions)
 );
 app.use(express.json({ limit: "10mb" }));
 app.use("/uploads", express.static(uploadsDir));
