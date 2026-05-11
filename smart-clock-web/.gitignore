@@ -1,0 +1,13 @@
+node_modules
+.next
+dist
+coverage
+
+web\node_modules
+web\.next
+server\node_modules
+server\uploads
+server\data\db.json
+
+.env
+*.log

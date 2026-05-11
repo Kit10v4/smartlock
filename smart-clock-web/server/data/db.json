@@ -1,0 +1,45 @@
+{
+  "stations": [
+    {
+      "id": "06d5685c-90c5-4217-b1a3-5f8ab8879c4c",
+      "name": "Radio Paradise",
+      "url": "https://stream.radioparadise.com/aac-320",
+      "genre": "Mix"
+    },
+    {
+      "id": "6e4a112d-506c-4997-9405-8bbc4d21b5cd",
+      "name": "BBC World Service",
+      "url": "https://stream.live.vc.bbcmedia.co.uk/bbc_world_service",
+      "genre": "News"
+    },
+    {
+      "id": "71ba9927-7943-438c-8565-834f85deef3a",
+      "name": "KEXP",
+      "url": "https://kexp.streamguys1.com/kexp160.aac",
+      "genre": "Indie"
+    },
+    {
+      "id": "9831a5e3-270b-42d6-81ab-2e40815f54ce",
+      "name": "SomaFM Groove Salad",
+      "url": "https://ice6.somafm.com/groovesalad-128-mp3",
+      "genre": "Chill"
+    },
+    {
+      "id": "6f4fc637-29c3-4ea4-a909-f806df5ab6fe",
+      "name": "Jazz24",
+      "url": "https://live.wostreaming.net/direct/ppm-jazz24mp3-ibc1",
+      "genre": "Jazz"
+    }
+  ],
+  "playlist": [],
+  "gallery": [],
+  "youtubeHistory": [],
+  "settings": {
+    "city": "Ho Chi Minh",
+    "brightness": 180,
+    "blinkColon": true,
+    "ampm": false,
+    "format24h": true,
+    "theme": "cyan"
+  }
+}
