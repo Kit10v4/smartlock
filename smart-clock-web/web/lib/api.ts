@@ -11,7 +11,16 @@ async function request<T>(path: string, method: Method, body?: unknown): Promise
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Request failed: ${response.status}`);
+    let parsedMessage = "";
+    if (text) {
+      try {
+        const payload = JSON.parse(text) as { error?: string; message?: string };
+        parsedMessage = payload.error || payload.message || "";
+      } catch {
+        parsedMessage = "";
+      }
+    }
+    throw new Error(parsedMessage || text || `Request failed: ${response.status}`);
   }
   if (response.status === 204) {
     return null as T;

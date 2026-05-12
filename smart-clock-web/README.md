@@ -39,6 +39,10 @@ Default server URL: `http://localhost:10000`
 ### Notes
 - `yt-dlp` is used for YouTube extraction (already prepared in `server/Dockerfile`).
 - If `WEATHER_API_KEY` is missing, weather endpoint returns mock fallback data.
+- If YouTube returns "Sign in to confirm you're not a bot", set one of:
+  - `YTDLP_COOKIES_FILE` (path to exported cookies.txt)
+  - `YTDLP_COOKIES_B64` (base64 of cookies.txt, useful for Render secret env)
+  - `YTDLP_COOKIES_FROM_BROWSER` (example: `chrome` or `firefox`, local dev)
 
 ## 2) Run frontend (web)
 
@@ -64,6 +68,11 @@ Set:
 - `NEXT_PUBLIC_API_URL=https://<render-domain>`
 - `NEXT_PUBLIC_SOCKET_URL=https://<render-domain>`
 - Firebase `NEXT_PUBLIC_FIREBASE_*` values if using Firebase in production
+
+Optional YouTube reliability envs on backend:
+- `YTDLP_COOKIES_FILE` or `YTDLP_COOKIES_B64`
+- `YTDLP_USER_AGENT`
+- `YTDLP_EXTRACTOR_ARGS`
 
 ## 4) ESP32 protocol
 
