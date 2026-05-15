@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { parseGIF, decompressFrames } from "gifuct-js";
 import { uploadFile } from "@/lib/api";
-import { imageToRGB565, resizeImage } from "@/lib/imageUtils";
+import { sendImageFileToDevice } from "@/lib/imageTransfer";
 import ImagePreview from "./ImagePreview";
 
 type Props = {
@@ -18,42 +17,8 @@ export default function ImageUploader({ onUploaded, onSendBinary, onSendCommand 
   const [message, setMessage] = useState("");
 
   async function prepare(current: File) {
-    if (current.type === "image/gif") {
-      const url = URL.createObjectURL(current);
-      setPreviewUrl(url);
-      const buffer = await current.arrayBuffer();
-      const gif = parseGIF(buffer) as { lsd: { width: number; height: number } };
-      const frames = decompressFrames(gif, true);
-      onSendCommand({
-        type: "gif_start",
-        frames: frames.length,
-        width: gif.lsd.width,
-        height: gif.lsd.height,
-        delay: frames[0]?.delay || 100
-      });
-      for (const frame of frames) {
-        const canvas = document.createElement("canvas");
-        canvas.width = gif.lsd.width;
-        canvas.height = gif.lsd.height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) break;
-        const imageData = new ImageData(
-          new Uint8ClampedArray(frame.patch),
-          frame.dims.width,
-          frame.dims.height
-        );
-        ctx.putImageData(imageData, frame.dims.left, frame.dims.top);
-        const fullData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        onSendBinary(imageToRGB565(fullData.data, canvas.width, canvas.height));
-        await new Promise((resolve) => setTimeout(resolve, frame.delay || 100));
-      }
-      onSendCommand({ type: "gif_end" });
-      return;
-    }
-
-    const result = await resizeImage(current);
-    setPreviewUrl(result.previewUrl);
-    onSendBinary(result.rgb565);
+    setPreviewUrl(URL.createObjectURL(current));
+    await sendImageFileToDevice(current, onSendBinary, onSendCommand);
   }
 
   async function upload() {
