@@ -38,9 +38,10 @@ export default function GalleryPage() {
                   height?: number;
                   packetBytes?: number;
                   packetLimitBytes?: number;
+                  packetEffectiveLimitBytes?: number;
                 };
                 setMessage(
-                  `Sent to ESP32: ${payload.width ?? "?"}x${payload.height ?? "?"}, ${payload.packetBytes ?? "?"} bytes (limit ${payload.packetLimitBytes ?? "?"})`
+                  `Sent to ESP32: ${payload.width ?? "?"}x${payload.height ?? "?"}, ${payload.packetBytes ?? "?"} bytes (limit ${payload.packetLimitBytes ?? "?"}, effective ${payload.packetEffectiveLimitBytes ?? "?"})`
                 );
               })
               .catch((e: Error) => setMessage(e.message))

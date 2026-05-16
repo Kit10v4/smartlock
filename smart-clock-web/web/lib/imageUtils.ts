@@ -1,6 +1,23 @@
 export const ESP32_MAX_WIDTH = 160;
 export const ESP32_MAX_HEIGHT = 120;
-export const ESP32_WS_SAFE_PACKET_BYTES = 15 * 1024;
+
+const DEFAULT_PACKET_LIMIT_BYTES = 15 * 1024;
+const parsedPacketLimit = Number(process.env.NEXT_PUBLIC_ESP32_WS_SAFE_PACKET_BYTES || DEFAULT_PACKET_LIMIT_BYTES);
+
+const DEFAULT_PACKET_SAFETY_RATIO = 0.8;
+const parsedSafetyRatio = Number(
+  process.env.NEXT_PUBLIC_ESP32_WS_PACKET_SAFETY_RATIO || DEFAULT_PACKET_SAFETY_RATIO
+);
+
+export const ESP32_WS_PACKET_SAFETY_RATIO =
+  Number.isFinite(parsedSafetyRatio) && parsedSafetyRatio > 0 && parsedSafetyRatio <= 1
+    ? parsedSafetyRatio
+    : DEFAULT_PACKET_SAFETY_RATIO;
+
+export const ESP32_WS_SAFE_PACKET_BYTES =
+  Number.isFinite(parsedPacketLimit) && parsedPacketLimit > 512
+    ? Math.floor(parsedPacketLimit)
+    : DEFAULT_PACKET_LIMIT_BYTES;
 
 const PROTOCOL_HEADER_BYTES = 4;
 const RGB565_BYTES_PER_PIXEL = 2;
@@ -20,7 +37,12 @@ function getTargetSize(
     throw new Error("Invalid packet byte limit");
   }
 
-  const maxPixelsByPacket = Math.floor((maxPacketBytes - PROTOCOL_HEADER_BYTES) / RGB565_BYTES_PER_PIXEL);
+  const effectivePacketBytes = Math.max(
+    512,
+    Math.floor(maxPacketBytes * ESP32_WS_PACKET_SAFETY_RATIO)
+  );
+
+  const maxPixelsByPacket = Math.floor((effectivePacketBytes - PROTOCOL_HEADER_BYTES) / RGB565_BYTES_PER_PIXEL);
   if (maxPixelsByPacket <= 0) {
     throw new Error("Packet limit is too small for RGB565 payload");
   }
@@ -31,7 +53,8 @@ function getTargetSize(
 
   return {
     width: Math.max(1, Math.floor(width * ratio)),
-    height: Math.max(1, Math.floor(height * ratio))
+    height: Math.max(1, Math.floor(height * ratio)),
+    effectivePacketBytes
   };
 }
 
@@ -114,6 +137,7 @@ export async function resizeAndConvertToRGB565(
     packetBytes: packet.byteLength,
     sourceWidth: img.width,
     sourceHeight: img.height,
-    maxPacketBytes
+    maxPacketBytes,
+    effectivePacketBytes: target.effectivePacketBytes
   };
 }

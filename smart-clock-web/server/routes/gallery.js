@@ -5,12 +5,52 @@ const express = require("express");
 const multer = require("multer");
 const sharp = require("sharp");
 
-const ESP32_MAX_WIDTH = Number(process.env.ESP32_IMAGE_MAX_WIDTH || 160);
-const ESP32_MAX_HEIGHT = Number(process.env.ESP32_IMAGE_MAX_HEIGHT || 120);
-const ESP32_WS_SAFE_PACKET_BYTES = Number(process.env.ESP32_WS_SAFE_PACKET_BYTES || (15 * 1024));
+const DEFAULT_MAX_WIDTH = 160;
+const DEFAULT_MAX_HEIGHT = 120;
+const DEFAULT_PACKET_BYTES = 15 * 1024;
+const DEFAULT_PACKET_SAFETY_RATIO = 0.8;
+
+function readPositiveInt(value, fallback, minimum = 1) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  const intVal = Math.floor(parsed);
+  if (intVal < minimum) {
+    return fallback;
+  }
+  return intVal;
+}
+
+function readSafetyRatio(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  if (parsed <= 0 || parsed > 1) {
+    return fallback;
+  }
+  return parsed;
+}
+
+const ESP32_MAX_WIDTH = readPositiveInt(process.env.ESP32_IMAGE_MAX_WIDTH, DEFAULT_MAX_WIDTH);
+const ESP32_MAX_HEIGHT = readPositiveInt(process.env.ESP32_IMAGE_MAX_HEIGHT, DEFAULT_MAX_HEIGHT);
+const ESP32_WS_SAFE_PACKET_BYTES = readPositiveInt(
+  process.env.ESP32_WS_SAFE_PACKET_BYTES,
+  DEFAULT_PACKET_BYTES,
+  512
+);
+const ESP32_WS_PACKET_SAFETY_RATIO = readSafetyRatio(
+  process.env.ESP32_WS_PACKET_SAFETY_RATIO,
+  DEFAULT_PACKET_SAFETY_RATIO
+);
+const ESP32_EFFECTIVE_PACKET_BYTES = Math.max(
+  512,
+  Math.floor(ESP32_WS_SAFE_PACKET_BYTES * ESP32_WS_PACKET_SAFETY_RATIO)
+);
 
 function computeTargetSize(width, height) {
-  const maxPixels = Math.floor((ESP32_WS_SAFE_PACKET_BYTES - 4) / 2);
+  const maxPixels = Math.floor((ESP32_EFFECTIVE_PACKET_BYTES - 4) / 2);
   if (width <= 0 || height <= 0 || maxPixels <= 0) {
     return { width: 0, height: 0 };
   }
@@ -137,7 +177,7 @@ module.exports = function galleryRoutes({ store, sendToDevice }, uploadsDir) {
     }
 
     console.log(
-      `[Gallery] Send image ${item.id}: ${srcWidth}x${srcHeight} -> ${width}x${height}, packet=${payload.length} bytes`
+      `[Gallery] Send image ${item.id}: ${srcWidth}x${srcHeight} -> ${width}x${height}, packet=${payload.length} bytes, limit=${ESP32_WS_SAFE_PACKET_BYTES}, effective=${ESP32_EFFECTIVE_PACKET_BYTES}`
     );
 
     const sent = sendToDevice(payload, true);
@@ -152,7 +192,8 @@ module.exports = function galleryRoutes({ store, sendToDevice }, uploadsDir) {
       sourceWidth: srcWidth,
       sourceHeight: srcHeight,
       packetBytes: payload.length,
-      packetLimitBytes: ESP32_WS_SAFE_PACKET_BYTES
+      packetLimitBytes: ESP32_WS_SAFE_PACKET_BYTES,
+      packetEffectiveLimitBytes: ESP32_EFFECTIVE_PACKET_BYTES
     });
   });
 

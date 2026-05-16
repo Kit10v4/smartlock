@@ -23,7 +23,8 @@ export async function sendImageFileToDevice(file: File, sendBinary: SendBinary) 
       height: result.height,
       packetBytes: result.packet.byteLength,
       expectedPacketBytes,
-      maxPacketBytes: result.maxPacketBytes
+      maxPacketBytes: result.maxPacketBytes,
+      effectivePacketBytes: result.effectivePacketBytes
     });
 
     if (result.packet.byteLength !== expectedPacketBytes) {
