@@ -15,8 +15,11 @@ module.exports = function createSocketHandler({ io, state, sendToDevice, queueMa
       callback?.({ ok: true });
     });
 
-    socket.on("to_device_binary", (arrayBuffer, callback) => {
-      const success = sendToDevice(arrayBuffer, true);
+    socket.on("to_device_binary", (data, callback) => {
+      const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+      console.log(`[Binary] Nhan ${buf.length} bytes tu web, relay xuong ESP32`);
+      const success = sendToDevice(buf, true);
+      console.log(`[Binary] Ket qua relay: ${success}`);
       if (!success) {
         callback?.({ ok: false, message: "ESP32 is offline" });
         return;
