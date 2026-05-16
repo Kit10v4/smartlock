@@ -1,12 +1,34 @@
 export const ESP32_MAX_WIDTH = 160;
 export const ESP32_MAX_HEIGHT = 120;
+export const ESP32_WS_SAFE_PACKET_BYTES = 15 * 1024;
 
-function getTargetSize(width: number, height: number, maxWidth: number, maxHeight: number) {
+const PROTOCOL_HEADER_BYTES = 4;
+const RGB565_BYTES_PER_PIXEL = 2;
+
+function getTargetSize(
+  width: number,
+  height: number,
+  maxWidth: number,
+  maxHeight: number,
+  maxPacketBytes: number
+) {
   if (width <= 0 || height <= 0) {
     throw new Error("Invalid source image size");
   }
 
-  const ratio = Math.min(1, maxWidth / width, maxHeight / height);
+  if (maxPacketBytes <= PROTOCOL_HEADER_BYTES) {
+    throw new Error("Invalid packet byte limit");
+  }
+
+  const maxPixelsByPacket = Math.floor((maxPacketBytes - PROTOCOL_HEADER_BYTES) / RGB565_BYTES_PER_PIXEL);
+  if (maxPixelsByPacket <= 0) {
+    throw new Error("Packet limit is too small for RGB565 payload");
+  }
+
+  const ratioByDimensions = Math.min(1, maxWidth / width, maxHeight / height);
+  const ratioByPacket = Math.min(1, Math.sqrt(maxPixelsByPacket / (width * height)));
+  const ratio = Math.min(ratioByDimensions, ratioByPacket);
+
   return {
     width: Math.max(1, Math.floor(width * ratio)),
     height: Math.max(1, Math.floor(height * ratio))
@@ -60,9 +82,14 @@ export function rgbaToRGB565Packet(imageData: Uint8ClampedArray, width: number, 
   return packet;
 }
 
-export async function resizeAndConvertToRGB565(file: File, maxWidth = ESP32_MAX_WIDTH, maxHeight = ESP32_MAX_HEIGHT) {
+export async function resizeAndConvertToRGB565(
+  file: File,
+  maxWidth = ESP32_MAX_WIDTH,
+  maxHeight = ESP32_MAX_HEIGHT,
+  maxPacketBytes = ESP32_WS_SAFE_PACKET_BYTES
+) {
   const img = await loadImageFromFile(file);
-  const target = getTargetSize(img.width, img.height, maxWidth, maxHeight);
+  const target = getTargetSize(img.width, img.height, maxWidth, maxHeight, maxPacketBytes);
 
   const canvas = document.createElement("canvas");
   canvas.width = target.width;
@@ -83,6 +110,10 @@ export async function resizeAndConvertToRGB565(file: File, maxWidth = ESP32_MAX_
   return {
     width: target.width,
     height: target.height,
-    packet
+    packet,
+    packetBytes: packet.byteLength,
+    sourceWidth: img.width,
+    sourceHeight: img.height,
+    maxPacketBytes
   };
 }

@@ -29,7 +29,22 @@ export default function GalleryPage() {
       <div style={{ marginTop: 12 }}>
         <GalleryGrid
           items={items}
-          onSend={(id) => api.sendGallery(id).catch((e: Error) => setMessage(e.message))}
+          onSend={(id) =>
+            api
+              .sendGallery(id)
+              .then((result) => {
+                const payload = result as {
+                  width?: number;
+                  height?: number;
+                  packetBytes?: number;
+                  packetLimitBytes?: number;
+                };
+                setMessage(
+                  `Sent to ESP32: ${payload.width ?? "?"}x${payload.height ?? "?"}, ${payload.packetBytes ?? "?"} bytes (limit ${payload.packetLimitBytes ?? "?"})`
+                );
+              })
+              .catch((e: Error) => setMessage(e.message))
+          }
           onDelete={(id) =>
             api
               .deleteGallery(id)

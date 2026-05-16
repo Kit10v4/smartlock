@@ -5,6 +5,26 @@ const express = require("express");
 const multer = require("multer");
 const sharp = require("sharp");
 
+const ESP32_MAX_WIDTH = Number(process.env.ESP32_IMAGE_MAX_WIDTH || 160);
+const ESP32_MAX_HEIGHT = Number(process.env.ESP32_IMAGE_MAX_HEIGHT || 120);
+const ESP32_WS_SAFE_PACKET_BYTES = Number(process.env.ESP32_WS_SAFE_PACKET_BYTES || (15 * 1024));
+
+function computeTargetSize(width, height) {
+  const maxPixels = Math.floor((ESP32_WS_SAFE_PACKET_BYTES - 4) / 2);
+  if (width <= 0 || height <= 0 || maxPixels <= 0) {
+    return { width: 0, height: 0 };
+  }
+
+  const ratioByDimensions = Math.min(1, ESP32_MAX_WIDTH / width, ESP32_MAX_HEIGHT / height);
+  const ratioByPacket = Math.min(1, Math.sqrt(maxPixels / (width * height)));
+  const ratio = Math.min(ratioByDimensions, ratioByPacket);
+
+  return {
+    width: Math.max(1, Math.floor(width * ratio)),
+    height: Math.max(1, Math.floor(height * ratio))
+  };
+}
+
 module.exports = function galleryRoutes({ store, sendToDevice }, uploadsDir) {
   const router = express.Router();
 
@@ -59,11 +79,32 @@ module.exports = function galleryRoutes({ store, sendToDevice }, uploadsDir) {
       return;
     }
 
+    let metadata;
+    try {
+      metadata = await sharp(filePath, { animated: false }).metadata();
+    } catch (error) {
+      res.status(500).json({ error: error.message || "failed to read image metadata" });
+      return;
+    }
+
+    const srcWidth = metadata.width || 0;
+    const srcHeight = metadata.height || 0;
+    const targetSize = computeTargetSize(srcWidth, srcHeight);
+    if (targetSize.width <= 0 || targetSize.height <= 0) {
+      res.status(500).json({ error: "invalid target image size" });
+      return;
+    }
+
     let data;
     let info;
     try {
       ({ data, info } = await sharp(filePath, { animated: false })
-        .resize({ width: 320, height: 240, fit: "inside", withoutEnlargement: true })
+        .resize({
+          width: targetSize.width,
+          height: targetSize.height,
+          fit: "inside",
+          withoutEnlargement: true
+        })
         .toColorspace("srgb")
         .removeAlpha()
         .raw()
@@ -95,12 +136,24 @@ module.exports = function galleryRoutes({ store, sendToDevice }, uploadsDir) {
       payload.writeUInt16BE(rgb565, 4 + (i * 2));
     }
 
+    console.log(
+      `[Gallery] Send image ${item.id}: ${srcWidth}x${srcHeight} -> ${width}x${height}, packet=${payload.length} bytes`
+    );
+
     const sent = sendToDevice(payload, true);
     if (!sent) {
       res.status(503).json({ error: "ESP32 is offline" });
       return;
     }
-    res.json({ ok: true, width, height });
+    res.json({
+      ok: true,
+      width,
+      height,
+      sourceWidth: srcWidth,
+      sourceHeight: srcHeight,
+      packetBytes: payload.length,
+      packetLimitBytes: ESP32_WS_SAFE_PACKET_BYTES
+    });
   });
 
   router.delete("/:id", (req, res) => {

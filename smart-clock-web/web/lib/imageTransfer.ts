@@ -17,10 +17,13 @@ export async function sendImageFileToDevice(file: File, sendBinary: SendBinary) 
     const expectedPacketBytes = 4 + result.width * result.height * 2;
 
     console.info(`${LOG_PREFIX} conversion complete`, {
+      sourceWidth: result.sourceWidth,
+      sourceHeight: result.sourceHeight,
       width: result.width,
       height: result.height,
       packetBytes: result.packet.byteLength,
-      expectedPacketBytes
+      expectedPacketBytes,
+      maxPacketBytes: result.maxPacketBytes
     });
 
     if (result.packet.byteLength !== expectedPacketBytes) {

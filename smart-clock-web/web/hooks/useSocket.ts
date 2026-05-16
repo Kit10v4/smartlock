@@ -58,7 +58,17 @@ export function useSocket() {
 
   function sendBinary(payload: ArrayBuffer) {
     const socket = getSocket();
-    socket.emit("to_device_binary", payload);
+    socket.emit(
+      "to_device_binary",
+      payload,
+      (ack?: { ok?: boolean; message?: string; bytes?: number }) => {
+        if (ack?.ok) {
+          console.info("[socket] Binary relayed to device", { bytes: ack.bytes ?? payload.byteLength });
+          return;
+        }
+        console.error("[socket] Binary relay failed", { message: ack?.message || "Unknown relay error" });
+      }
+    );
   }
 
   return {
