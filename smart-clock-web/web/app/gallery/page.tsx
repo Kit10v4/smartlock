@@ -45,7 +45,7 @@ export default function GalleryPage() {
       <div style={{ marginTop: 12 }}>
         <GalleryGrid
           items={items}
-          onSend={(id) => sendGalleryItem(id).catch((e: Error) => setMessage(e.message))}
+          onSend={(id) => api.sendGallery(id).catch((e: Error) => setMessage(e.message))}
           onDelete={(id) =>
             api
               .deleteGallery(id)
