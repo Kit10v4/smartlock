@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { uploadFile } from "@/lib/api";
 import { sendImageFileToDevice } from "@/lib/imageTransfer";
 import ImagePreview from "./ImagePreview";
@@ -8,25 +8,51 @@ import ImagePreview from "./ImagePreview";
 type Props = {
   onUploaded: () => void;
   onSendBinary: (buffer: ArrayBuffer) => void;
-  onSendCommand: (payload: unknown) => void;
 };
 
-export default function ImageUploader({ onUploaded, onSendBinary, onSendCommand }: Props) {
+export default function ImageUploader({ onUploaded, onSendBinary }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [message, setMessage] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
 
   async function prepare(current: File) {
-    setPreviewUrl(URL.createObjectURL(current));
-    await sendImageFileToDevice(current, onSendBinary, onSendCommand);
+    setMessage("Processing image for ESP32...");
+    setIsSending(true);
+    const nextPreviewUrl = URL.createObjectURL(current);
+    setPreviewUrl(nextPreviewUrl);
+
+    try {
+      await sendImageFileToDevice(current, onSendBinary);
+      setMessage("Sent RAW RGB565 packet to ESP32");
+    } finally {
+      setIsSending(false);
+    }
   }
 
   async function upload() {
     if (!file) return;
-    await uploadFile("/api/gallery/upload", file);
-    setMessage(`Uploaded ${file.name}`);
-    setFile(null);
-    onUploaded();
+    setIsUploading(true);
+    try {
+      await uploadFile("/api/gallery/upload", file);
+      setMessage(`Uploaded ${file.name}`);
+      setFile(null);
+      onUploaded();
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "Upload failed";
+      setMessage(text);
+    } finally {
+      setIsUploading(false);
+    }
   }
 
   return (
@@ -36,6 +62,7 @@ export default function ImageUploader({ onUploaded, onSendBinary, onSendCommand 
           <input
             type="file"
             accept=".png,.jpg,.jpeg,.gif,image/*"
+            disabled={isSending || isUploading}
             onChange={(e) => {
               const selected = e.target.files?.[0];
               if (!selected) return;
@@ -43,11 +70,12 @@ export default function ImageUploader({ onUploaded, onSendBinary, onSendCommand 
               prepare(selected).catch((err: Error) => setMessage(err.message));
             }}
           />
-          <button className="primary" onClick={upload} disabled={!file}>
-            Upload
+          <button className="primary" onClick={upload} disabled={!file || isSending || isUploading}>
+            {isUploading ? "Uploading..." : "Upload"}
           </button>
         </div>
         {message && <div className="muted">{message}</div>}
+        <div className="muted">ESP32 mode: RAW RGB565, max 160x120, big-endian header</div>
       </div>
       <ImagePreview src={previewUrl} />
     </div>
