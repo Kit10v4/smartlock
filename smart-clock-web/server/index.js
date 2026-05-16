@@ -19,6 +19,7 @@ dotenv.config();
 
 const port = Number(process.env.PORT || 10000);
 const app = express();
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 
 const allowedOrigins = (process.env.WEB_ORIGIN || "*")
