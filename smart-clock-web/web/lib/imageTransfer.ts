@@ -33,7 +33,7 @@ export async function sendImageFileToDevice(file: File, sendBinary: SendBinary) 
       );
     }
 
-    sendBinary(result.packet.buffer.slice(0));
+    sendBinary(result.packet.buffer.slice(0) as ArrayBuffer);
 
     const elapsedMs = Math.round(performance.now() - startedAt);
     console.info(`${LOG_PREFIX} send success`, {
