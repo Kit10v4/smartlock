@@ -5,10 +5,10 @@ const express = require("express");
 const multer = require("multer");
 const sharp = require("sharp");
 
-const DEFAULT_MAX_WIDTH = 160;
-const DEFAULT_MAX_HEIGHT = 120;
-const DEFAULT_PACKET_BYTES = 15 * 1024;
-const DEFAULT_PACKET_SAFETY_RATIO = 0.8;
+const DEFAULT_MAX_WIDTH = 320;
+const DEFAULT_MAX_HEIGHT = 218;
+const DEFAULT_CHUNK_BYTES = 4096;
+const DEFAULT_CHUNK_DELAY_MS = 8;
 
 function readPositiveInt(value, fallback, minimum = 1) {
   const parsed = Number(value);
@@ -22,47 +22,35 @@ function readPositiveInt(value, fallback, minimum = 1) {
   return intVal;
 }
 
-function readSafetyRatio(value, fallback) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  if (parsed <= 0 || parsed > 1) {
-    return fallback;
-  }
-  return parsed;
-}
-
 const ESP32_MAX_WIDTH = readPositiveInt(process.env.ESP32_IMAGE_MAX_WIDTH, DEFAULT_MAX_WIDTH);
 const ESP32_MAX_HEIGHT = readPositiveInt(process.env.ESP32_IMAGE_MAX_HEIGHT, DEFAULT_MAX_HEIGHT);
-const ESP32_WS_SAFE_PACKET_BYTES = readPositiveInt(
-  process.env.ESP32_WS_SAFE_PACKET_BYTES,
-  DEFAULT_PACKET_BYTES,
-  512
-);
-const ESP32_WS_PACKET_SAFETY_RATIO = readSafetyRatio(
-  process.env.ESP32_WS_PACKET_SAFETY_RATIO,
-  DEFAULT_PACKET_SAFETY_RATIO
-);
-const ESP32_EFFECTIVE_PACKET_BYTES = Math.max(
-  512,
-  Math.floor(ESP32_WS_SAFE_PACKET_BYTES * ESP32_WS_PACKET_SAFETY_RATIO)
-);
+const ESP32_CHUNK_BYTES = readPositiveInt(process.env.ESP32_IMAGE_CHUNK_BYTES, DEFAULT_CHUNK_BYTES, 512);
+const ESP32_CHUNK_DELAY_MS = readPositiveInt(process.env.ESP32_IMAGE_CHUNK_DELAY_MS, DEFAULT_CHUNK_DELAY_MS, 0);
 
 function computeTargetSize(width, height) {
-  const maxPixels = Math.floor((ESP32_EFFECTIVE_PACKET_BYTES - 4) / 2);
-  if (width <= 0 || height <= 0 || maxPixels <= 0) {
-    return { width: 0, height: 0 };
-  }
-
-  const ratioByDimensions = Math.min(1, ESP32_MAX_WIDTH / width, ESP32_MAX_HEIGHT / height);
-  const ratioByPacket = Math.min(1, Math.sqrt(maxPixels / (width * height)));
-  const ratio = Math.min(ratioByDimensions, ratioByPacket);
-
+  if (width <= 0 || height <= 0) return { width: 0, height: 0 };
+  const ratio = Math.min(1, ESP32_MAX_WIDTH / width, ESP32_MAX_HEIGHT / height);
   return {
     width: Math.max(1, Math.floor(width * ratio)),
     height: Math.max(1, Math.floor(height * ratio))
   };
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function sendImageChunked(sendToDevice, width, height, pixelBuffer) {
+  const total = pixelBuffer.length;
+  if (!sendToDevice({ type: "image_begin", w: width, h: height, total })) return false;
+  // Give ESP32 a moment to allocate its PSRAM buffer before chunks arrive.
+  await sleep(40);
+  for (let off = 0; off < total; off += ESP32_CHUNK_BYTES) {
+    const slice = pixelBuffer.subarray(off, Math.min(off + ESP32_CHUNK_BYTES, total));
+    if (!sendToDevice(slice, true)) return false;
+    if (ESP32_CHUNK_DELAY_MS > 0) await sleep(ESP32_CHUNK_DELAY_MS);
+  }
+  return sendToDevice({ type: "image_end" });
 }
 
 module.exports = function galleryRoutes({ store, sendToDevice }, uploadsDir) {
@@ -163,9 +151,7 @@ module.exports = function galleryRoutes({ store, sendToDevice }, uploadsDir) {
     }
 
     const pixelCount = width * height;
-    const payload = Buffer.allocUnsafe(4 + (pixelCount * 2));
-    payload.writeUInt16BE(width, 0);
-    payload.writeUInt16BE(height, 2);
+    const pixelBuffer = Buffer.allocUnsafe(pixelCount * 2);
 
     for (let i = 0; i < pixelCount; i += 1) {
       const offset = i * channels;
@@ -173,14 +159,14 @@ module.exports = function galleryRoutes({ store, sendToDevice }, uploadsDir) {
       const g = data[offset + 1];
       const b = data[offset + 2];
       const rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
-      payload.writeUInt16BE(rgb565, 4 + (i * 2));
+      pixelBuffer.writeUInt16BE(rgb565, i * 2);
     }
 
     console.log(
-      `[Gallery] Send image ${item.id}: ${srcWidth}x${srcHeight} -> ${width}x${height}, packet=${payload.length} bytes, limit=${ESP32_WS_SAFE_PACKET_BYTES}, effective=${ESP32_EFFECTIVE_PACKET_BYTES}`
+      `[Gallery] Send image ${item.id}: ${srcWidth}x${srcHeight} -> ${width}x${height}, total=${pixelBuffer.length} bytes, chunk=${ESP32_CHUNK_BYTES}`
     );
 
-    const sent = sendToDevice(payload, true);
+    const sent = await sendImageChunked(sendToDevice, width, height, pixelBuffer);
     if (!sent) {
       res.status(503).json({ error: "ESP32 is offline" });
       return;
@@ -191,9 +177,8 @@ module.exports = function galleryRoutes({ store, sendToDevice }, uploadsDir) {
       height,
       sourceWidth: srcWidth,
       sourceHeight: srcHeight,
-      packetBytes: payload.length,
-      packetLimitBytes: ESP32_WS_SAFE_PACKET_BYTES,
-      packetEffectiveLimitBytes: ESP32_EFFECTIVE_PACKET_BYTES
+      totalBytes: pixelBuffer.length,
+      chunkBytes: ESP32_CHUNK_BYTES
     });
   });
 

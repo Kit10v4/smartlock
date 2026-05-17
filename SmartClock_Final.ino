@@ -110,6 +110,16 @@ unsigned long lastWsLoop    = 0;
 char nowTitle[64]  = "";
 char nowSource[16] = "radio";
 
+// ==================== IMAGE RX (chunked) ====================
+uint8_t*       imgBuf       = nullptr;
+size_t         imgBufCap    = 0;
+size_t         imgRxOffset  = 0;
+size_t         imgExpected  = 0;
+uint16_t       imgW         = 0;
+uint16_t       imgH         = 0;
+unsigned long  imgRxStart   = 0;
+const unsigned long IMG_RX_TIMEOUT_MS = 20000;
+
 // Thời tiết
 float  wTemp     = 0;
 int    wHumidity = 0;
@@ -198,8 +208,9 @@ void splash(const char* msg, int step) {
 void loop() {
   if (isPlaying) audio.loop();
 
-  // WS loop chỉ chạy mỗi 100ms để không block touch
-  if (wifiOK && millis() - lastWsLoop >= 100) {
+  // WS loop: chạy nhanh hơn khi đang nhận ảnh chunked để không overflow TCP buffer
+  unsigned long wsInterval = (imgBuf && imgExpected > 0) ? 5 : 30;
+  if (wifiOK && millis() - lastWsLoop >= wsInterval) {
     lastWsLoop = millis();
     ws.loop();
   }
@@ -208,6 +219,7 @@ void loop() {
   tickTouch();
   tickSerial();
   tickHeartbeat();
+  tickImageTimeout();
 
   delay(15);
 }
@@ -388,6 +400,19 @@ void handleWS(char* msg) {
     ESP.restart();
   }
 
+  // Image transfer (chunked)
+  if (strcmp(type, "image_begin") == 0) {
+    uint16_t w = doc["w"] | 0;
+    uint16_t h = doc["h"] | 0;
+    size_t total = doc["total"] | 0;
+    imgBegin(w, h, total);
+    return;
+  }
+  if (strcmp(type, "image_end") == 0) {
+    imgEnd();
+    return;
+  }
+
   // Weather
   if (strcmp(type, "weather") == 0) {
     wTemp     = doc["temp"] | 0.0;
@@ -401,62 +426,78 @@ void handleWS(char* msg) {
   }
 }
 
+void imgAbort(const char* reason) {
+  if (imgBuf) { heap_caps_free(imgBuf); imgBuf = nullptr; }
+  imgBufCap = 0; imgRxOffset = 0; imgExpected = 0; imgW = 0; imgH = 0;
+  if (reason) Serial.printf("[IMG] Abort: %s\n", reason);
+}
+
+bool imgEnsureBuffer(size_t needed) {
+  if (imgBuf && imgBufCap >= needed) return true;
+  if (imgBuf) heap_caps_free(imgBuf);
+  imgBuf = (uint8_t*)heap_caps_malloc(needed, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!imgBuf) imgBuf = (uint8_t*)heap_caps_malloc(needed, MALLOC_CAP_8BIT);
+  if (!imgBuf) { imgBufCap = 0; return false; }
+  imgBufCap = needed;
+  return true;
+}
+
+void imgFinalize() {
+  if (!imgBuf || imgRxOffset != imgExpected || imgW == 0 || imgH == 0) return;
+  int x = max(0, (320 - (int)imgW) / 2);
+  int y = max(0, (218 - (int)imgH) / 2);
+  tft.fillRect(0, 0, 320, 218, TFT_BLACK);
+  tft.setSwapBytes(false);  // pixel data is big-endian RGB565 (display byte order)
+  tft.pushImage(x, y, imgW, imgH, (uint16_t*)imgBuf);
+  Serial.printf("[IMG] Drawn %dx%d at %d,%d\n", imgW, imgH, x, y);
+}
+
+void imgBegin(uint16_t w, uint16_t h, size_t total) {
+  imgAbort(nullptr);
+  if (w == 0 || h == 0 || w > 320 || h > 240 || total != (size_t)w * h * 2) {
+    Serial.printf("[IMG] Bad begin: %dx%d total=%u\n", w, h, (unsigned)total);
+    return;
+  }
+  if (!imgEnsureBuffer(total)) {
+    Serial.printf("[IMG] OOM for %u bytes\n", (unsigned)total);
+    return;
+  }
+  imgW = w; imgH = h; imgExpected = total;
+  imgRxOffset = 0;
+  imgRxStart = millis();
+  Serial.printf("[IMG] Begin %dx%d, %u bytes\n", w, h, (unsigned)total);
+}
+
+void imgEnd() {
+  if (!imgBuf) { Serial.println("[IMG] End without buffer"); return; }
+  if (imgRxOffset != imgExpected) {
+    Serial.printf("[IMG] End incomplete: %u/%u\n", (unsigned)imgRxOffset, (unsigned)imgExpected);
+    imgAbort("incomplete");
+    return;
+  }
+  imgFinalize();
+  imgAbort(nullptr);
+}
+
 void handleWSImage(uint8_t *data, size_t len) {
-
-  Serial.println("\n===== IMAGE RX =====");
-
-  if (len < 4) {
-    Serial.println("[IMG] Packet too small");
+  if (!imgBuf || imgExpected == 0) {
+    Serial.printf("[IMG] Unexpected chunk %u bytes (no transfer in progress)\n", (unsigned)len);
     return;
   }
-
-  // BIG ENDIAN
-  uint16_t w = (data[0] << 8) | data[1];
-  uint16_t h = (data[2] << 8) | data[3];
-
-  Serial.printf("[IMG] Width : %d\n", w);
-  Serial.printf("[IMG] Height: %d\n", h);
-
-  // Safety limits
-  if (w == 0 || h == 0) {
-    Serial.println("[IMG] Invalid size");
-    return;
+  if (imgRxOffset + len > imgBufCap) { imgAbort("overflow"); return; }
+  memcpy(imgBuf + imgRxOffset, data, len);
+  imgRxOffset += len;
+  // Auto-finalize when complete (in case image_end packet is lost)
+  if (imgRxOffset >= imgExpected) {
+    imgFinalize();
+    imgAbort(nullptr);
   }
+}
 
-  if (w > 320 || h > 240) {
-    Serial.println("[IMG] Too large");
-    return;
+void tickImageTimeout() {
+  if (imgBuf && imgExpected > 0 && (millis() - imgRxStart) > IMG_RX_TIMEOUT_MS) {
+    imgAbort("timeout");
   }
-
-  size_t expected = 4 + (w * h * 2);
-
-  Serial.printf("[IMG] Expected bytes: %u\n", expected);
-  Serial.printf("[IMG] Received bytes: %u\n", len);
-
-  if (len < expected) {
-    Serial.println("[IMG] Incomplete packet");
-    return;
-  }
-
-  // RGB565 DATA
-  uint16_t *pixels = (uint16_t *)(data + 4);
-
-  // CENTER
-  int x = max(0, (320 - w) / 2);
-  int y = max(0, (220 - h) / 2);
-
-  Serial.printf("[IMG] Draw at x=%d y=%d\n", x, y);
-
-  // IMPORTANT
-  tft.setSwapBytes(false);
-
-  // Clear area
-  tft.fillRect(0, 0, 320, 220, TFT_BLACK);
-
-  // Draw
-  tft.pushImage(x, y, w, h, pixels);
-
-  Serial.println("[IMG] DONE");
 }
 // ==================== QUEUE ====================
 void playQueueTrack() {
