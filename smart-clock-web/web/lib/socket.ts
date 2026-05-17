@@ -54,36 +54,50 @@ function resolveSocketUrl() {
   return "http://localhost:10000";
 }
 
-let warmupStarted = false;
+let warmupPromise: Promise<void> | null = null;
 
-function warmupServer(url: string) {
-  if (warmupStarted || typeof window === "undefined") return;
-  warmupStarted = true;
-  // Wake up free-tier hosts (e.g. Render) that sleep after inactivity.
-  // Cold starts can take 30–60s, longer than the socket handshake timeout.
-  fetch(`${url}/socket.io/?EIO=4&transport=polling`, {
-    method: "GET",
-    cache: "no-store",
-    keepalive: true
-  }).catch(() => {
-    /* ignore — warmup is best-effort */
-  });
+function warmupServer(url: string): Promise<void> {
+  if (warmupPromise) return warmupPromise;
+  if (typeof window === "undefined") return Promise.resolve();
+  // Free-tier hosts (Render) sleep after inactivity. Only HTTP requests wake them —
+  // WebSocket upgrades do not. Poll /health until it responds (cold start: 30–90s).
+  warmupPromise = (async () => {
+    const deadline = Date.now() + 120000;
+    while (Date.now() < deadline) {
+      try {
+        const res = await fetch(`${url}/health`, { method: "GET", cache: "no-store" });
+        if (res.ok) return;
+      } catch {
+        /* server still waking up */
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  })();
+  return warmupPromise;
 }
 
 export function getSocket(): Socket {
   if (!socket) {
     const socketUrl = resolveSocketUrl();
-    warmupServer(socketUrl);
+    // Polling first so the initial handshake is an HTTP request (which wakes Render),
+    // then Socket.IO upgrades to websocket automatically.
     socket = io(socketUrl, {
-      transports: ["websocket", "polling"],
+      transports: ["polling", "websocket"],
       timeout: 60000,
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 2000,
-      reconnectionDelayMax: 10000
+      reconnectionDelayMax: 10000,
+      autoConnect: false
     });
     if (typeof window !== "undefined") {
-      console.info("[socket] connecting", { socketUrl });
+      console.info("[socket] warming up server", { socketUrl });
+      warmupServer(socketUrl).finally(() => {
+        console.info("[socket] connecting", { socketUrl });
+        socket?.connect();
+      });
+    } else {
+      socket.connect();
     }
   }
   return socket;
