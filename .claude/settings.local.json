@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -I -m 30 https://smartlock-tlxk.onrender.com)",
+      "Bash(curl -m 30 -s -o /dev/null -w \"HTTP %{http_code} | time_total: %{time_total}s\\\\n\" https://smartlock-tlxk.onrender.com/socket.io/?EIO=4^)",
+      "Bash(transport=polling 2>&1)",
+      "Bash(curl -m 30 -s -w \"\\\\nHTTP %{http_code}\\\\n\" \"https://smartlock-tlxk.onrender.com/socket.io/?EIO=4&transport=polling\")",
+      "Bash(npx tsc *)"
+    ]
+  }
+}
