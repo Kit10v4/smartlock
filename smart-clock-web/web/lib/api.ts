@@ -1,4 +1,43 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:10000";
+function normalizeBaseUrl(value: string) {
+  return value.replace(/\/+$/, "");
+}
+
+function isLocalhostEndpoint(value: string) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(value);
+}
+
+function isBrowserHostedLocally() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
+}
+
+function resolveApiUrl() {
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (configured) {
+    const normalized = normalizeBaseUrl(configured);
+    if (typeof window !== "undefined" && !isBrowserHostedLocally() && isLocalhostEndpoint(normalized)) {
+      console.warn("[api] ignoring localhost NEXT_PUBLIC_API_URL on remote host", {
+        configured: normalized,
+        browserHost: window.location.hostname
+      });
+    } else {
+      return normalized;
+    }
+  }
+
+  if (typeof window !== "undefined") {
+    if (process.env.NODE_ENV === "development") {
+      return "http://localhost:10000";
+    }
+    return window.location.origin;
+  }
+
+  return "http://localhost:10000";
+}
+
+const API_URL = resolveApiUrl();
 
 type Method = "GET" | "POST" | "PUT" | "DELETE";
 

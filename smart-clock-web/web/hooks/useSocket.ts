@@ -6,6 +6,7 @@ import type { DeviceInfo, DeviceStatus } from "@/lib/types";
 
 export function useSocket() {
   const [connected, setConnected] = useState(false);
+  const [socketError, setSocketError] = useState<string | null>(null);
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>({ online: false });
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo>({});
   const [lastMessage, setLastMessage] = useState<Record<string, unknown> | null>(null);
@@ -15,9 +16,15 @@ export function useSocket() {
 
     function onConnect() {
       setConnected(true);
+      setSocketError(null);
     }
     function onDisconnect() {
       setConnected(false);
+    }
+    function onConnectError(error: Error) {
+      setConnected(false);
+      setSocketError(error.message || "Socket connection error");
+      console.error("[socket] connect_error", error.message || error);
     }
     function onBootstrap(payload: { status?: DeviceStatus; info?: DeviceInfo }) {
       if (payload?.status) setDeviceStatus(payload.status);
@@ -36,6 +43,7 @@ export function useSocket() {
 
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
+    socket.on("connect_error", onConnectError);
     socket.on("bootstrap", onBootstrap);
     socket.on("device_status", onDeviceStatus);
     socket.on("device_message", onDeviceMessage);
@@ -45,6 +53,7 @@ export function useSocket() {
     return () => {
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
+      socket.off("connect_error", onConnectError);
       socket.off("bootstrap", onBootstrap);
       socket.off("device_status", onDeviceStatus);
       socket.off("device_message", onDeviceMessage);
@@ -73,6 +82,7 @@ export function useSocket() {
 
   return {
     connected,
+    socketError,
     deviceStatus,
     deviceInfo,
     lastMessage,

@@ -7,12 +7,17 @@ import QuickControls from "@/components/dashboard/QuickControls";
 import { useSocket } from "@/hooks/useSocket";
 
 export default function DashboardPage() {
-  const { connected, deviceInfo, deviceStatus, send } = useSocket();
+  const { connected, socketError, deviceInfo, deviceStatus, send } = useSocket();
 
   return (
     <main className="container">
       <h1 className="title">Dashboard</h1>
-      <StatusIndicator online={connected && deviceStatus.online} info={deviceInfo} />
+      <StatusIndicator
+        serverConnected={connected}
+        online={Boolean(deviceStatus.online)}
+        info={deviceInfo}
+        error={socketError}
+      />
 
       <div className="grid grid-2" style={{ marginTop: 12 }}>
         <ClockDisplay />
