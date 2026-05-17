@@ -54,14 +54,33 @@ function resolveSocketUrl() {
   return "http://localhost:10000";
 }
 
+let warmupStarted = false;
+
+function warmupServer(url: string) {
+  if (warmupStarted || typeof window === "undefined") return;
+  warmupStarted = true;
+  // Wake up free-tier hosts (e.g. Render) that sleep after inactivity.
+  // Cold starts can take 30–60s, longer than the socket handshake timeout.
+  fetch(`${url}/socket.io/?EIO=4&transport=polling`, {
+    method: "GET",
+    cache: "no-store",
+    keepalive: true
+  }).catch(() => {
+    /* ignore — warmup is best-effort */
+  });
+}
+
 export function getSocket(): Socket {
   if (!socket) {
     const socketUrl = resolveSocketUrl();
+    warmupServer(socketUrl);
     socket = io(socketUrl, {
       transports: ["websocket", "polling"],
-      timeout: 10000,
+      timeout: 60000,
       reconnection: true,
-      reconnectionAttempts: Infinity
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 10000
     });
     if (typeof window !== "undefined") {
       console.info("[socket] connecting", { socketUrl });
