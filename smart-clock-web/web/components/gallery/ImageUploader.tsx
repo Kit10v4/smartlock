@@ -7,10 +7,11 @@ import ImagePreview from "./ImagePreview";
 
 type Props = {
   onUploaded: () => void;
+  onSendJson: (payload: unknown) => void;
   onSendBinary: (buffer: ArrayBuffer) => void;
 };
 
-export default function ImageUploader({ onUploaded, onSendBinary }: Props) {
+export default function ImageUploader({ onUploaded, onSendJson, onSendBinary }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [message, setMessage] = useState("");
@@ -32,8 +33,8 @@ export default function ImageUploader({ onUploaded, onSendBinary }: Props) {
     setPreviewUrl(nextPreviewUrl);
 
     try {
-      await sendImageFileToDevice(current, onSendBinary);
-      setMessage("Sent RAW RGB565 packet to ESP32");
+      await sendImageFileToDevice(current, onSendJson, onSendBinary);
+      setMessage("Sent RGB565 image (chunked) to ESP32");
     } finally {
       setIsSending(false);
     }
@@ -75,7 +76,7 @@ export default function ImageUploader({ onUploaded, onSendBinary }: Props) {
           </button>
         </div>
         {message && <div className="muted">{message}</div>}
-        <div className="muted">ESP32 mode: RAW RGB565, max 160x120, big-endian header</div>
+        <div className="muted">ESP32 mode: chunked RGB565, max 320x218</div>
       </div>
       <ImagePreview src={previewUrl} />
     </div>

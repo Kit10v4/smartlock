@@ -10,7 +10,7 @@ import GalleryGrid from "@/components/gallery/GalleryGrid";
 export default function GalleryPage() {
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [message, setMessage] = useState("");
-  const { sendBinary } = useSocket();
+  const { send, sendBinary } = useSocket();
 
   async function load() {
     const data = (await api.getGallery()) as GalleryItem[];
@@ -24,7 +24,11 @@ export default function GalleryPage() {
   return (
     <main className="container">
       <h1 className="title">Gallery</h1>
-      <ImageUploader onUploaded={() => load().catch(() => null)} onSendBinary={sendBinary} />
+      <ImageUploader
+        onUploaded={() => load().catch(() => null)}
+        onSendJson={send}
+        onSendBinary={sendBinary}
+      />
       {message && <div style={{ color: "var(--error)" }}>{message}</div>}
       <div style={{ marginTop: 12 }}>
         <GalleryGrid
@@ -36,12 +40,11 @@ export default function GalleryPage() {
                 const payload = result as {
                   width?: number;
                   height?: number;
-                  packetBytes?: number;
-                  packetLimitBytes?: number;
-                  packetEffectiveLimitBytes?: number;
+                  totalBytes?: number;
+                  chunkBytes?: number;
                 };
                 setMessage(
-                  `Sent to ESP32: ${payload.width ?? "?"}x${payload.height ?? "?"}, ${payload.packetBytes ?? "?"} bytes (limit ${payload.packetLimitBytes ?? "?"}, effective ${payload.packetEffectiveLimitBytes ?? "?"})`
+                  `Sent to ESP32: ${payload.width ?? "?"}x${payload.height ?? "?"}, ${payload.totalBytes ?? "?"} bytes (chunk ${payload.chunkBytes ?? "?"})`
                 );
               })
               .catch((e: Error) => setMessage(e.message))
