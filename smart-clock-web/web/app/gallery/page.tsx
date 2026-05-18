@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { useSocket } from "@/hooks/useSocket";
 import type { GalleryItem } from "@/lib/types";
 import ImageUploader from "@/components/gallery/ImageUploader";
 import GalleryGrid from "@/components/gallery/GalleryGrid";
@@ -10,7 +9,6 @@ import GalleryGrid from "@/components/gallery/GalleryGrid";
 export default function GalleryPage() {
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [message, setMessage] = useState("");
-  const { send, sendBinary } = useSocket();
 
   async function load() {
     const data = (await api.getGallery()) as GalleryItem[];
@@ -24,11 +22,7 @@ export default function GalleryPage() {
   return (
     <main className="container">
       <h1 className="title">Gallery</h1>
-      <ImageUploader
-        onUploaded={() => load().catch(() => null)}
-        onSendJson={send}
-        onSendBinary={sendBinary}
-      />
+      <ImageUploader onUploaded={() => load().catch(() => null)} />
       {message && <div style={{ color: "var(--error)" }}>{message}</div>}
       <div style={{ marginTop: 12 }}>
         <GalleryGrid

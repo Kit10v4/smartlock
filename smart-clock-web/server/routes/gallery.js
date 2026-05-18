@@ -5,27 +5,21 @@ const express = require("express");
 const multer = require("multer");
 const sharp = require("sharp");
 
+const { sendImageChunkedToDevice, CHUNK_BYTES: ESP32_CHUNK_BYTES } = require("../services/imageSender");
+
 const DEFAULT_MAX_WIDTH = 320;
 const DEFAULT_MAX_HEIGHT = 218;
-const DEFAULT_CHUNK_BYTES = 4096;
-const DEFAULT_CHUNK_DELAY_MS = 8;
 
 function readPositiveInt(value, fallback, minimum = 1) {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
+  if (!Number.isFinite(parsed)) return fallback;
   const intVal = Math.floor(parsed);
-  if (intVal < minimum) {
-    return fallback;
-  }
+  if (intVal < minimum) return fallback;
   return intVal;
 }
 
 const ESP32_MAX_WIDTH = readPositiveInt(process.env.ESP32_IMAGE_MAX_WIDTH, DEFAULT_MAX_WIDTH);
 const ESP32_MAX_HEIGHT = readPositiveInt(process.env.ESP32_IMAGE_MAX_HEIGHT, DEFAULT_MAX_HEIGHT);
-const ESP32_CHUNK_BYTES = readPositiveInt(process.env.ESP32_IMAGE_CHUNK_BYTES, DEFAULT_CHUNK_BYTES, 512);
-const ESP32_CHUNK_DELAY_MS = readPositiveInt(process.env.ESP32_IMAGE_CHUNK_DELAY_MS, DEFAULT_CHUNK_DELAY_MS, 0);
 
 function computeTargetSize(width, height) {
   if (width <= 0 || height <= 0) return { width: 0, height: 0 };
@@ -34,23 +28,6 @@ function computeTargetSize(width, height) {
     width: Math.max(1, Math.floor(width * ratio)),
     height: Math.max(1, Math.floor(height * ratio))
   };
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function sendImageChunked(sendToDevice, width, height, pixelBuffer) {
-  const total = pixelBuffer.length;
-  if (!sendToDevice({ type: "image_begin", w: width, h: height, total })) return false;
-  // Give ESP32 a moment to allocate its PSRAM buffer before chunks arrive.
-  await sleep(40);
-  for (let off = 0; off < total; off += ESP32_CHUNK_BYTES) {
-    const slice = pixelBuffer.subarray(off, Math.min(off + ESP32_CHUNK_BYTES, total));
-    if (!sendToDevice(slice, true)) return false;
-    if (ESP32_CHUNK_DELAY_MS > 0) await sleep(ESP32_CHUNK_DELAY_MS);
-  }
-  return sendToDevice({ type: "image_end" });
 }
 
 module.exports = function galleryRoutes({ store, sendToDevice }, uploadsDir) {
@@ -166,9 +143,9 @@ module.exports = function galleryRoutes({ store, sendToDevice }, uploadsDir) {
       `[Gallery] Send image ${item.id}: ${srcWidth}x${srcHeight} -> ${width}x${height}, total=${pixelBuffer.length} bytes, chunk=${ESP32_CHUNK_BYTES}`
     );
 
-    const sent = await sendImageChunked(sendToDevice, width, height, pixelBuffer);
-    if (!sent) {
-      res.status(503).json({ error: "ESP32 is offline" });
+    const sent = await sendImageChunkedToDevice(sendToDevice, width, height, pixelBuffer);
+    if (!sent.ok) {
+      res.status(503).json({ error: sent.reason === "offline" ? "ESP32 is offline" : "send failed" });
       return;
     }
     res.json({
