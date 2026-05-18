@@ -19,6 +19,10 @@
 #include <TFT_eSPI.h>
 #include <RTClib.h>
 #include <ArduinoJson.h>
+
+// Tăng giới hạn frame WS để nhận ảnh nguyên cục (default 15KB không đủ cho 320x218 = 140KB).
+#define WEBSOCKETS_MAX_DATA_SIZE  (160 * 1024)
+#define WEBSOCKETS_USE_BIG_MEM
 #include <WebSocketsClient.h>
 #include "Audio.h"
 
@@ -206,16 +210,6 @@ void splash(const char* msg, int step) {
 
 // ==================== LOOP ====================
 void loop() {
-  bool receivingImage = (imgBuf && imgExpected > 0);
-
-  // Trong lúc nhận ảnh: tight loop, drain WS liên tục, bỏ tất cả các tick khác.
-  // Lý do: chunks 4KB arrive mỗi ~8ms, TCP RX buffer ESP32 chỉ ~5KB → phải đọc kịp.
-  if (receivingImage && wifiOK) {
-    for (int i = 0; i < 8; i++) ws.loop();
-    tickImageTimeout();
-    return;
-  }
-
   if (isPlaying) audio.loop();
 
   if (wifiOK && millis() - lastWsLoop >= 30) {

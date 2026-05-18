@@ -5,7 +5,7 @@ const express = require("express");
 const multer = require("multer");
 const sharp = require("sharp");
 
-const { sendImageChunkedToDevice, CHUNK_BYTES: ESP32_CHUNK_BYTES } = require("../services/imageSender");
+const { sendImageChunkedToDevice } = require("../services/imageSender");
 
 const DEFAULT_MAX_WIDTH = 320;
 const DEFAULT_MAX_HEIGHT = 218;
@@ -140,7 +140,7 @@ module.exports = function galleryRoutes({ store, sendToDevice }, uploadsDir) {
     }
 
     console.log(
-      `[Gallery] Send image ${item.id}: ${srcWidth}x${srcHeight} -> ${width}x${height}, total=${pixelBuffer.length} bytes, chunk=${ESP32_CHUNK_BYTES}`
+      `[Gallery] Send image ${item.id}: ${srcWidth}x${srcHeight} -> ${width}x${height}, total=${pixelBuffer.length} bytes (single frame)`
     );
 
     const sent = await sendImageChunkedToDevice(sendToDevice, width, height, pixelBuffer);
@@ -155,7 +155,7 @@ module.exports = function galleryRoutes({ store, sendToDevice }, uploadsDir) {
       sourceWidth: srcWidth,
       sourceHeight: srcHeight,
       totalBytes: pixelBuffer.length,
-      chunkBytes: ESP32_CHUNK_BYTES
+      chunkBytes: pixelBuffer.length
     });
   });
 
