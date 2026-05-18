@@ -287,13 +287,20 @@ void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
 }
 
 void handleWS(char* msg) {
-  // Không in toàn bộ msg với img_chunk (mỗi cái ~5.5KB, ngập serial)
-  if (strncmp(msg, "{\"type\":\"img_chunk\"", 19) != 0) {
+  size_t msgLen = strlen(msg);
+  bool isImgChunk = (strncmp(msg, "{\"type\":\"img_chunk\"", 19) == 0);
+  if (isImgChunk) {
+    Serial.printf("[WS] img_chunk frame len=%u\n", (unsigned)msgLen);
+  } else {
     Serial.printf("[WS] %s\n", msg);
   }
 
   JsonDocument doc;
-  if (deserializeJson(doc, msg)) return;
+  DeserializationError jsonErr = deserializeJson(doc, msg);
+  if (jsonErr) {
+    Serial.printf("[WS] JSON parse err: %s (msgLen=%u)\n", jsonErr.c_str(), (unsigned)msgLen);
+    return;
+  }
 
   const char* type = doc["type"] | "";
 
