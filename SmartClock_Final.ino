@@ -19,11 +19,8 @@
 #include <TFT_eSPI.h>
 #include <RTClib.h>
 #include <ArduinoJson.h>
-
-// Tăng giới hạn frame WS để nhận ảnh nguyên cục (default 15KB không đủ cho 320x218 = 140KB).
-#define WEBSOCKETS_MAX_DATA_SIZE  (160 * 1024)
-#define WEBSOCKETS_USE_BIG_MEM
 #include <WebSocketsClient.h>
+#include <mbedtls/base64.h>
 #include "Audio.h"
 
 // ==================== CẤU HÌNH ====================
@@ -290,7 +287,10 @@ void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
 }
 
 void handleWS(char* msg) {
-  Serial.printf("[WS] %s\n", msg);
+  // Không in toàn bộ msg với img_chunk (mỗi cái ~5.5KB, ngập serial)
+  if (strncmp(msg, "{\"type\":\"img_chunk\"", 19) != 0) {
+    Serial.printf("[WS] %s\n", msg);
+  }
 
   JsonDocument doc;
   if (deserializeJson(doc, msg)) return;
@@ -408,6 +408,30 @@ void handleWS(char* msg) {
     uint16_t h = doc["h"] | 0;
     size_t total = doc["total"] | 0;
     imgBegin(w, h, total);
+    return;
+  }
+  if (strcmp(type, "img_chunk") == 0) {
+    if (!imgBuf || imgExpected == 0) {
+      Serial.println("[IMG] img_chunk without begin");
+      return;
+    }
+    const char* b64 = doc["data"] | "";
+    size_t b64Len = strlen(b64);
+    if (b64Len == 0) return;
+    size_t decoded = 0;
+    size_t roomLeft = imgBufCap - imgRxOffset;
+    int rc = mbedtls_base64_decode(imgBuf + imgRxOffset, roomLeft, &decoded,
+                                   (const unsigned char*)b64, b64Len);
+    if (rc != 0) {
+      Serial.printf("[IMG] base64 decode err=%d (b64Len=%u room=%u)\n", rc, (unsigned)b64Len, (unsigned)roomLeft);
+      imgAbort("base64 fail");
+      return;
+    }
+    imgRxOffset += decoded;
+    if (imgRxOffset >= imgExpected) {
+      imgFinalize();
+      imgAbort(nullptr);
+    }
     return;
   }
   if (strcmp(type, "image_end") == 0) {
