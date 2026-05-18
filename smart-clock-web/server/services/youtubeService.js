@@ -155,7 +155,10 @@ module.exports = function createYouTubeService() {
       return cached;
     }
 
-    const url = await runYtDlp(["-f", "bestaudio[ext=m4a]/bestaudio", "--get-url", youtubeURL]);
+    // Format priority: m4a (AAC) > mp3 > aac codec > bất kỳ audio nào > best stream.
+    // ESP32-audioI2S phát được m4a/aac/mp3/wav/flac/opus, nên rộng để không miss video.
+    const formatSelector = "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio[acodec=aac]/bestaudio/best";
+    const url = await runYtDlp(["-f", formatSelector, "--get-url", youtubeURL]);
 
     return setCached(audioCache, youtubeURL, url);
   }
