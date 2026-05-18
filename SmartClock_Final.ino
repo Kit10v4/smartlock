@@ -206,11 +206,19 @@ void splash(const char* msg, int step) {
 
 // ==================== LOOP ====================
 void loop() {
+  bool receivingImage = (imgBuf && imgExpected > 0);
+
+  // Trong lúc nhận ảnh: tight loop, drain WS liên tục, bỏ tất cả các tick khác.
+  // Lý do: chunks 4KB arrive mỗi ~8ms, TCP RX buffer ESP32 chỉ ~5KB → phải đọc kịp.
+  if (receivingImage && wifiOK) {
+    for (int i = 0; i < 8; i++) ws.loop();
+    tickImageTimeout();
+    return;
+  }
+
   if (isPlaying) audio.loop();
 
-  // WS loop: chạy nhanh hơn khi đang nhận ảnh chunked để không overflow TCP buffer
-  unsigned long wsInterval = (imgBuf && imgExpected > 0) ? 5 : 30;
-  if (wifiOK && millis() - lastWsLoop >= wsInterval) {
+  if (wifiOK && millis() - lastWsLoop >= 30) {
     lastWsLoop = millis();
     ws.loop();
   }
